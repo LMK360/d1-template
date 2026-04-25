@@ -1,151 +1,150 @@
 export default {
-  async fetch(request, env) {
+  async fetch(request: Request, env: any) {
     const url = new URL(request.url);
 
-    // 🌐 CORS headers (important for GitHub Pages)
+    // 🌐 CORS
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type"
     };
 
-    // 🧩 Handle preflight requests (CORS)
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders });
     }
 
-    // 🟢 STATUS ROUTE (root)
+    const jsonResponse = (data: any, status = 200) =>
+      new Response(JSON.stringify(data), {
+        status,
+        headers: {
+          "content-type": "application/json",
+          ...corsHeaders
+        }
+      });
+
+    // 🟢 ROOT STATUS
     if (url.pathname === "/") {
-      return new Response(
-        JSON.stringify({
-          status: "online",
-          message: "Backend ready to handle login/signup 🔐"
-        }),
-        {
-          headers: {
-            "content-type": "application/json",
-            ...corsHeaders
-          }
-        }
-      );
+      return jsonResponse({
+        status: "online",
+        message: "Backend ready 🔐"
+      });
     }
 
-    // 🩺 HEALTH CHECK ROUTE (NEW)
+    // 🩺 HEALTH CHECK
     if (url.pathname === "/health") {
-      return new Response(
-        JSON.stringify({
-          status: "alive",
-          message: "Login system is running and reachable 🔥"
-        }),
-        {
-          headers: {
-            "content-type": "application/json",
-            ...corsHeaders
-          }
-        }
-      );
+      return jsonResponse({
+        status: "alive",
+        message: "Auth system running 🔥"
+      });
     }
 
-    // ❌ Only allow POST for auth routes
+    // ❌ Only POST allowed for auth
     if (request.method !== "POST") {
-      return new Response(
-        JSON.stringify({ message: "Method Not Allowed" }),
-        {
-          status: 405,
-          headers: { "content-type": "application/json", ...corsHeaders }
-        }
+      return jsonResponse(
+        { message: "Method Not Allowed" },
+        405
       );
     }
 
-    // 📦 Parse JSON body
-    let body;
+    // 📦 Parse JSON safely
+    let body: any;
     try {
       body = await request.json();
     } catch {
-      return new Response(
-        JSON.stringify({ message: "Invalid JSON" }),
-        {
-          status: 400,
-          headers: { "content-type": "application/json", ...corsHeaders }
-        }
+      return jsonResponse({ message: "Invalid JSON body" }, 400);
+    }
+
+    const email = body?.email?.trim();
+    const password = body?.password?.trim();
+
+    // ❌ Guard clause
+    if (!email || !password) {
+      return jsonResponse(
+        { message: "Email and password required" },
+        400
       );
     }
 
-    const { email, password } = body;
-
     // 🟡 SIGNUP
     if (url.pathname === "/signup") {
-      if (!email || !password) {
-        return new Response(
-          JSON.stringify({ message: "Email and password required" }),
-          {
-            status: 400,
-            headers: { "content-type": "application/json", ...corsHeaders }
-          }
-        );
-      }
-
       try {
+        const exists = await env.DB.prepare(
+          "SELECT email FROM users WHERE email = ?"
+        )
+          .bind(email)
+          .first();
+
+        if (exists) {
+          return jsonResponse(
+            { message: "User already exists" },
+            409
+          );
+        }
+
         await env.DB.prepare(
           "INSERT INTO users (email, password) VALUES (?, ?)"
         )
           .bind(email, password)
           .run();
 
-        return new Response(
-          JSON.stringify({ message: "Signup successful 🔥" }),
-          {
-            headers: { "content-type": "application/json", ...corsHeaders }
-          }
-        );
+        return jsonResponse({
+          message: "Signup successful 🔥"
+        });
 
       } catch (err) {
-        return new Response(
-          JSON.stringify({ message: "User already exists" }),
+        return jsonResponse(
           {
-            status: 409,
-            headers: { "content-type": "application/json", ...corsHeaders }
-          }
+            message: "Signup failed",
+            error: String(err)
+          },
+          500
         );
       }
     }
 
     // 🔵 LOGIN
     if (url.pathname === "/login") {
-      const result = await env.DB.prepare(
-        "SELECT * FROM users WHERE email = ?"
-      )
-        .bind(email)
-        .first();
+      try {
+        const user = await env.DB.prepare(
+          "SELECT * FROM users WHERE email = ?"
+        )
+          .bind(email)
+          .first();
 
-      if (!result || result.password !== password) {
-        return new Response(
-          JSON.stringify({ message: "Invalid credentials" }),
-          {
-            status: 401,
-            headers: { "content-type": "application/json", ...corsHeaders }
-          }
-        );
-      }
+        if (!user) {
+          return jsonResponse(
+            { message: "User not found" },
+            404
+          );
+        }
 
-      return new Response(
-        JSON.stringify({
+        if (user.password !== password) {
+          return jsonResponse(
+            { message: "Invalid credentials" },
+            401
+          );
+        }
+
+        return jsonResponse({
           message: "Login successful 🔓",
           user: email
-        }),
-        {
-          headers: { "content-type": "application/json", ...corsHeaders }
-        }
-      );
+        });
+
+      } catch (err) {
+        return jsonResponse(
+          {
+            message: "Login error",
+            error: String(err)
+          },
+          500
+        );
+      }
     }
 
     // ❓ NOT FOUND
-    return new Response(
-      JSON.stringify({ message: "Route not found" }),
-      {
-        status: 404,
-        headers: { "content-type": "application/json", ...corsHeaders }
-      }
+    return jsonResponse(
+      { message: "Route not found" },
+      404
     );
   }
 };
