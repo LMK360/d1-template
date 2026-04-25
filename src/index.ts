@@ -14,12 +14,28 @@ export default {
       return new Response(null, { headers: corsHeaders });
     }
 
-    // 🟢 STATUS ROUTE
+    // 🟢 STATUS ROUTE (root)
     if (url.pathname === "/") {
       return new Response(
         JSON.stringify({
           status: "online",
           message: "Backend ready to handle login/signup 🔐"
+        }),
+        {
+          headers: {
+            "content-type": "application/json",
+            ...corsHeaders
+          }
+        }
+      );
+    }
+
+    // 🩺 HEALTH CHECK ROUTE (NEW)
+    if (url.pathname === "/health") {
+      return new Response(
+        JSON.stringify({
+          status: "alive",
+          message: "Login system is running and reachable 🔥"
         }),
         {
           headers: {
